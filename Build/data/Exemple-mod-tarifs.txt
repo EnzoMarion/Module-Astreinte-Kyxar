@@ -1,0 +1,211 @@
+<?php
+// ------------------------------------------------------------------------------------------------
+function tarifAutomate()
+{
+    switch($_REQUEST['Etape'])    
+    {
+        case 'Nouv' : return tarifNouveau();
+        case 'Edit' : return tarifModifier();
+        case 'EditV': return tarifValider();
+        case 'Suppr': return tarifSupprimer() . tarifAfficher();
+        case 'PDF' :  return tarifPDF();
+        default : return tarifAfficher();
+    }
+}
+// ------------------------------------------------------------------------------------------------
+function tarifAfficher()
+{
+    $date_du_jour = date("d/m/Y");
+    
+    $SQL = <<<END
+    SELECT * 
+    FROM k2_tarifs LEFT JOIN k2_tarifs_rubriques on k2_tarifs.id_rubrique = k2_tarifs_rubriques.id_rubrique 
+    ORDER by ordre,libelle
+END;
+
+    $Q = dbiDoBD($SQL);
+
+    $rubrique_prec = "";
+
+    while($R = dbiFetch($Q))
+    {
+        $num = $R['ordre'] < 100 ? 1 : 2;
+
+        if ($R['lib_rubrique'] != $rubrique_prec)
+        {
+            $lignes[$num] .= "<tr><th colspan=3 bgcolor=#BBBBBB>".$R['lib_rubrique']."</th></tr><tr bgcolor=#DDDDDD><td align=center>Description</td><td align=center>Coûts initiaux</td><td align=center>Coûts mensuel</td></tr>\n";
+        }
+
+        $href_modif = "$_SERVER[PHP_SELF]?Action=$_REQUEST[Action]&Etape=Edit&id=$R[id]";
+        $href_suppr = "$_SERVER[PHP_SELF]?Action=$_REQUEST[Action]&Etape=suppr&id=$R[id]";
+
+        if ($R['cout_initial'] == 0)
+            $cout_initial = "<td align=right></td>";
+        else
+            $cout_initial = "<td align=right>".$R['cout_initial']."&nbsp;</td>";
+
+        if ($R['cout_mensuel'] == 0)
+            $cout_mensuel = "<td align=right></td>";
+        else
+            $cout_mensuel = "<td align=right>".$R['cout_mensuel']."&nbsp;</td>";
+
+        $lignes[$num] .= "<tr><td><a class=tarif href=$href_modif>".$R['libelle']."<a/></td>".$cout_initial.$cout_mensuel."</tr>\n";
+        
+        if ($R['description'])
+            $lignes[$num] .= "<tr><td colspan=3 style='padding-left:20px;font-size:7pt;color:#888;padding-bottom:10px;'>".nl2br($R['description'])."</td></tr>\n";
+
+        $rubrique_prec = $R['lib_rubrique'];
+    }
+
+    $HTML =<<<END
+    <style>
+    a.tarif { color:555; text-decoration:none; }
+    </style>
+    <H1>TARIFS KYXAR</H1>
+    au $date_du_jour <br /><br />
+    <table style='width:800px'>
+       <tr><td valign=top width=49%>
+            <table>
+            $lignes[1]
+            </table>
+            </td>
+            <td width=2%></td>
+            <td valign=top width=49%>
+            <table>
+            $lignes[2]
+            </table>
+            </td>
+        </tr>
+    </table>
+
+    <br><br>
+
+    <a href='$_SERVER[PHP_SELF]?Action=$_REQUEST[Action]&Etape=Nouv'>Nouvelle entrée</a>
+    <a href='start_pdf.php?Action=$_REQUEST[Action]&Etape=PDF'>PDF</a>
+END;
+    
+    return $HTML;
+}
+// ------------------------------------------------------------------------------------------------
+function tarifFormulaire($D,$Erreur = "")
+{
+    if (is_array($Erreur))
+        foreach($Erreur as $k => $v)
+            $Erreur[$k] = "<br><span style='color:red'>$v</span>";
+
+    $SQL = "SELECT id_rubrique as id, lib_rubrique as label FROM k2_tarifs_rubriques  ORDER BY ordre";
+    $select_rubrique = ConstruireSelect($SQL,'Sélectionner','',$D[id_rubrique]);
+
+    $T[] = array(titre  => "Edition d'un tarif");
+    $T[] = array(desc   => "Rubrique"  ,      val => "<SELECT NAME='id_rubrique'  STYLE='WIDTH:300px;'>$select_rubrique</SELECT>");
+    $T[] = array(desc   => "Libellé"      ,   val => "<INPUT TYPE=TEXT NAME='libelle'      STYLE='WIDTH:300px;' VALUE='$D[libelle]'>$Erreur[libelle]");
+    $T[] = array(desc   => "Coût initial",    val => "<INPUT TYPE=TEXT NAME='cout_initial' STYLE='WIDTH:300px;' VALUE='$D[cout_initial]'>$Erreur[cout_initial]");
+    $T[] = array(desc   => "Coût mensuel",    val => "<INPUT TYPE=TEXT NAME='cout_mensuel' STYLE='WIDTH:300px;' VALUE='$D[cout_mensuel]'>$Erreur[cout_mensuel]");
+    $T[] = array(desc   => "Commentaire",     val => "<TEXTAREA NAME='description'         STYLE='Width:300px;Height:60px;'>$D[description]</TEXTAREA>$Erreur[description]");
+    $T[] = array(linkD  => "<INPUT TYPE=SUBMIT VALUE='Enregistrer'>");
+
+   $H = ToHTML($T);
+
+   $HTML = <<<END
+        <FORM ACTION='$_SERVER[PHP_SELF]' METHOD=POST>
+        <INPUT TYPE=HIDDEN NAME=Action VALUE='$_REQUEST[Action]'>
+        <INPUT TYPE=HIDDEN NAME=Etape  VALUE='EditV'>
+        <INPUT TYPE=HIDDEN NAME=id VALUE='$D[id]'>
+        $H
+        </FORM>
+END;
+   return $HTML;
+}
+// ------------------------------------------------------------------------------------------------
+function tarifNouveau()
+{
+    return tarifFormulaire("");
+}
+// ------------------------------------------------------------------------------------------------
+function tarifModifier()
+{
+    $SQL = "SELECT * FROM k2_tarifs WHERE id='$_REQUEST[id]'";
+    $Q=dbiDoBD($SQL);
+    $R=dbiFetch($Q);
+    foreach ($R as $k => $v)
+        $R[$k] = formConvert($v);
+    return tarifFormulaire($R);
+}
+// ------------------------------------------------------------------------------------------------
+function tarifValider()
+{
+    $D[id_rubrique]    = $_REQUEST[id_rubrique];
+    $D[libelle]        = stripslashes($_REQUEST[libelle]);
+    $D[cout_initial]   = $_REQUEST[cout_initial];
+    $D[cout_mensuel]   = $_REQUEST[cout_mensuel];
+    $D[description]    = stripslashes($_REQUEST[description]);
+
+    if (is_array($Erreur))
+    {
+        return ndfFormulaire($_REQUEST,$Erreur);
+    }
+
+    if ($_REQUEST[id])
+        dbiUpdateBDArray('k2_tarifs','id',$_REQUEST[id],$D);
+    else
+        dbiInsertBDArray('k2_tarifs',$D);
+
+    return tarifAfficher();
+}
+// ------------------------------------------------------------------------------------------------
+function tarifSupprimer()
+{
+    $SQL = "DELETE FROM k2_tarifs WHERE id='$_REQUEST[id]'";
+    $Q=dbiDoBD($SQL);
+}
+// ------------------------------------------------------------------------------------------------
+function tarifPDF()
+{
+
+    require "pdf-tarifs.php";
+
+    $pdf = new KPDF();
+
+    $pdf->AliasNbPages();
+    $pdf->SetAuthor("Kyxar");
+    $pdf->SetCreator("Intranet Kyxar.fr");
+    $pdf->SetSubject("Tarifs Kyxar");
+    $pdf->SetTitle("Tarifs Kyxar");
+    $pdf->SetDisplayMode("real","single");
+
+    $pdf->AddPage();
+
+    // EN TETE PAGE --
+    $pdf->afficheTitre();
+    $pdf->afficheDate();
+
+    $pdf->SetY(50);
+
+    
+    $SQL = <<<END
+    SELECT * 
+    FROM k2_tarifs LEFT JOIN k2_tarifs_rubriques on k2_tarifs.id_rubrique = k2_tarifs_rubriques.id_rubrique 
+    ORDER by ordre,libelle
+END;
+
+    $Q = dbiDoBD($SQL);
+
+    $rubrique_prec = "";
+
+    while($R = dbiFetch($Q))
+    {
+        if ($R['lib_rubrique'] != $rubrique_prec)
+        {
+            //$pdf->$rubrique = $R['lib_rubrique'];
+            $pdf->afficheRubrique($R);
+        }
+
+        $pdf->afficheTarif($R);
+
+        $rubrique_prec = $R['lib_rubrique'];
+    }
+
+    $pdf->Output();
+}
+// ------------------------------------------------------------------------------------------------
+?>

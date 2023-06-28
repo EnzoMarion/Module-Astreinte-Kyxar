@@ -1,0 +1,37 @@
+<?php
+
+function AstreintesAutomate()
+{
+
+    switch($_REQUEST['Etape'])
+    {
+        case 'Nouv' : return astreintesNouveau();
+        case 'Edit' : return astreintesModifier();
+        case "test" :
+        default :
+            return astreintesNouveau();
+    }
+
+}
+
+function astreintesNouveau(){
+    return astreintesFormulaire("");
+}
+function astreintesModifier(){
+
+}
+function astreintesFormulaire($D,$Erreur = "")
+{
+    $T[] = array('linkD'  => "<INPUT TYPE=SUBMIT VALUE='Enregistrer'>");
+
+    $H = ToHTML($T);
+
+    $HTML = <<<END
+        <FORM ACTION='$_SERVER[PHP_SELF]' METHOD=POST>
+        <INPUT TYPE=HIDDEN NAME=Action VALUE='$_REQUEST[Action]'>
+        <INPUT TYPE=HIDDEN NAME=Etape  VALUE='EditV'>
+        $H
+        </FORM>
+END;
+    return $HTML;
+}
